@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Geometry Dash - 컬러 & 음악</title>
+  <title>Geometry Dash - 회전 점프 속도 제한</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -23,7 +23,7 @@
       background: #333;
       border: 3px solid #fff;
       overflow: hidden;
-      transition: background-color 1s;
+      transition: background-color 1s linear;
     }
     #score {
       position: absolute;
@@ -31,6 +31,7 @@
       left: 10px;
       color: #fff;
       font-size: 20px;
+      z-index: 10;
     }
     #player {
       position: absolute;
@@ -40,11 +41,18 @@
       height: 40px;
       background: #4CAF50;
       border-radius: 6px;
-      transition: transform 0.3s ease, background-color 1s;
     }
-    #player.jump {
-      transform: rotate(90deg);
+
+    /* 점프할 때 회전 애니메이션 */
+    .jumping {
+      animation: spinJump 0.4s linear;
     }
+
+    @keyframes spinJump {
+      0%   { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
     .obstacle {
       position: absolute;
       bottom: 0;
@@ -80,6 +88,7 @@
       align-items: center;
       font-size: 30px;
       flex-direction: column;
+      z-index: 20;
     }
     #gameOver button {
       margin-top: 20px;
@@ -99,6 +108,7 @@
       font-size: 100px;
       color: white;
       user-select: none;
+      z-index: 30;
     }
   </style>
 </head>
@@ -111,9 +121,8 @@
       <button id="restartBtn">Restart</button>
     </div>
     <div id="countdown">5</div>
-    <audio id="bgMusic" loop autoplay>
-      <source src="https://cdn.pixabay.com/download/audio/2022/10/20/audio_7dcfe658d2.mp3?filename=arcade-music-loop-112731.mp3" type="audio/mpeg">
-      Your browser does not support the audio element.
+    <audio id="bgMusic" loop>
+      <source src="https://files.catbox.moe/fm7v5v.mp3" type="audio/mp3" />
     </audio>
   </div>
 
@@ -134,27 +143,29 @@
     let score = 0;
     let gameRunning = false;
     let obstacles = [];
-    let baseObstacleSpeed = 2.0;
-    const minSpeed = 0.8;
+    const baseObstacleSpeed = 2.0;
+    const speedIncrementPer100 = 0.3;
+    const minSpeed = 0.5;  // 속도 제한 (애니메이션 최소 지속시간)
+    let colorHue = 0;
 
     function jump() {
       if (!gameRunning || isJumping) return;
       isJumping = true;
       velocityY = jumpForce;
-      player.classList.add("jump");
+
+      player.classList.add("jumping");
+      setTimeout(() => player.classList.remove("jumping"), 400);
     }
 
     function updatePlayer() {
       if (!gameRunning) return;
       velocityY += gravity;
       positionY += velocityY;
-
       if (positionY <= 0) {
         positionY = 0;
         velocityY = 0;
         isJumping = false;
       }
-
       player.style.bottom = positionY + "px";
       requestAnimationFrame(updatePlayer);
     }
@@ -163,7 +174,11 @@
       const type = Math.random() < 0.5 ? "spike" : "block";
       const obs = document.createElement("div");
       obs.classList.add("obstacle", type);
-      const speed = Math.max(minSpeed, baseObstacleSpeed - score * 0.005);
+
+      const factor = Math.floor(score / 100);
+      // 점수가 올라갈수록 속도 증가하지만 minSpeed 이하로는 떨어지지 않음
+      let speed = baseObstacleSpeed - (factor * speedIncrementPer100);
+      speed = speed < minSpeed ? minSpeed : speed;
       obs.style.animationDuration = speed + "s";
 
       obs.addEventListener("animationend", () => {
@@ -198,25 +213,20 @@
       }
     }
 
-    function updateColors() {
-      const hue = score % 360;
-      game.style.backgroundColor = `hsl(${hue}, 40%, 20%)`;
-      player.style.backgroundColor = `hsl(${(hue + 180) % 360}, 60%, 50%)`;
-    }
-
     function gameLoop() {
       if (!gameRunning) return;
       checkCollisions();
       score++;
       scoreDisplay.textContent = "Score: " + score;
-      updateColors();
       requestAnimationFrame(gameLoop);
     }
 
     function gameOver() {
       gameRunning = false;
+      bgMusic.pause();
       obstacles.forEach(o => o.style.animationPlayState = "paused");
       gameOverScreen.style.display = "flex";
+      restartBtn.style.display = "block";
     }
 
     function startGame() {
@@ -227,15 +237,17 @@
       velocityY = 0;
       isJumping = false;
       player.style.bottom = "0px";
-      player.classList.remove("jump");
+      player.classList.remove("jumping");
       scoreDisplay.textContent = "Score: 0";
       gameOverScreen.style.display = "none";
       countdownEl.style.display = "none";
+      restartBtn.style.display = "none";
       gameRunning = true;
       bgMusic.currentTime = 0;
       bgMusic.play();
       updatePlayer();
       gameLoop();
+
       setInterval(() => {
         if (gameRunning) createObstacle();
       }, 1300);
@@ -245,7 +257,6 @@
       countdownEl.style.display = "block";
       countdownEl.textContent = seconds;
       let counter = seconds;
-
       const interval = setInterval(() => {
         counter--;
         if (counter > 0) {
@@ -257,12 +268,26 @@
       }, 1000);
     }
 
-    restartBtn.addEventListener("click", () => countdown(5));
+    function animateBackground() {
+      setInterval(() => {
+        colorHue = (colorHue + 20) % 360;
+        game.style.backgroundColor = `hsl(${colorHue}, 60%, 40%)`;
+      }, 1000);
+    }
+
+    restartBtn.addEventListener("click", () => {
+      restartBtn.style.display = "none";
+      countdown(5);
+    });
+
     window.addEventListener("keydown", e => {
-      if (e.code === "Space" || e.code === "ArrowUp") jump();
+      if (e.code === "Space" || e.code === "ArrowUp") {
+        jump();
+      }
     });
 
     countdown(5);
+    animateBackground();
   </script>
 </body>
 </html>
